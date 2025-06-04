@@ -34,12 +34,14 @@ async function checkAvailability() {
     waitUntil: "networkidle0",
   });
 
-  // ○が付いた日付をすべて取得
+  // ○または△が付いた日付をすべて取得
   const availableDays = await page.evaluate(() => {
     const result = [];
     const buttons = document.querySelectorAll(".day-select-button");
     buttons.forEach((btn) => {
-      if (btn.textContent.includes("○")) {
+      const textContent = btn.textContent;
+      // ○ または △ が含まれているかチェック
+      if (textContent.includes("○") || textContent.includes("△")) {
         const dateStr = btn.getAttribute("data-date");
         result.push(dateStr);
       }
@@ -47,7 +49,7 @@ async function checkAvailability() {
     return result;
   });
 
-  console.log(`[INFO] ○がある日: ${availableDays.join(", ")}`);
+  console.log(`[INFO] ○または△がある日: ${availableDays.join(", ")}`);
   await browser.close();
 
   // 6〜8月の土曜日に絞り込む
@@ -55,10 +57,10 @@ async function checkAvailability() {
   console.log(`[INFO] 対象の土曜: ${saturdays.join(", ") || "なし"}`);
 
   if (saturdays.length > 0) {
-    const message = "【ふもとっぱら】6〜8月の土曜 空きあり！\n" + saturdays.join("\n");
+    const message = "【ふもとっぱら】6〜8月の土曜 空きあり(残りわずか含む)！\n" + saturdays.join("\n");
     await sendLine(message);
   } else {
-    console.log("【INFO】6〜8月の土曜日に空きはありません。通知はスキップします。");
+    console.log("【INFO】6〜8月の土曜日に空き(残りわずか含む)はありません。通知はスキップします。");
   }
 }
 
