@@ -1,5 +1,4 @@
-// index.js - ふもとっぱら予約状況をチェックしてLINEに通知（6〜8月の土曜）
-// puppeteerを使って予約カレンダーをスクレイピングし、LINE Messaging APIで空き状況を通知します。
+// index.js - ふもとっぱら予約状況をチェックしてLINEに通知（6〜8月の土曜・キャンプ宿泊）
 
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
@@ -34,22 +33,43 @@ async function checkAvailability() {
     waitUntil: "networkidle0",
   });
 
-  // ○または△が付いた日付をすべて取得
+  // 「キャンプ宿泊」の○または△が付いた日付を取得
   const availableDays = await page.evaluate(() => {
     const result = [];
-    const buttons = document.querySelectorAll(".day-select-button");
-    buttons.forEach((btn) => {
-      const textContent = btn.textContent;
-      // ○ または △ が含まれているかチェック
-      if (textContent.includes("○") || textContent.includes("△")) {
-        const dateStr = btn.getAttribute("data-date");
-        result.push(dateStr);
+    const table = document.querySelector("table.calendar-table");
+    if (!table) {
+      console.error("テーブルが見つかりません");
+      return result;
+    }
+
+    // 日付ヘッダ取得
+    const headers = Array.from(table.querySelectorAll("thead th"))
+      .slice(1) // 最初の列はプラン名
+      .map(th => th.textContent.trim());
+
+    // tbody内の行を取得
+    const rows = table.querySelectorAll("tbody tr");
+    rows.forEach(row => {
+      const planTh = row.querySelector("th.cell-site p");
+      const planName = planTh?.textContent?.trim() || "";
+      if (planName.includes("キャンプ宿泊")) {
+        const cells = row.querySelectorAll("td.cell-date");
+        cells.forEach((cell, index) => {
+          const status = cell.textContent.trim();
+          if (status.includes("○") || status.includes("△") || status.includes("残")) {
+            const dateStr = headers[index];  // 例: "6/7"
+            const year = 2025;
+            const [month, day] = dateStr.split("/").map(n => parseInt(n, 10));
+            const fullDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            result.push(fullDate);
+          }
+        });
       }
     });
     return result;
   });
 
-  console.log(`[INFO] ○または△がある日: ${availableDays.join(", ")}`);
+  console.log(`[INFO] 「キャンプ宿泊」で○または△がある日: ${availableDays.join(", ")}`);
   await browser.close();
 
   // 6〜8月の土曜日に絞り込む
@@ -57,7 +77,7 @@ async function checkAvailability() {
   console.log(`[INFO] 対象の土曜: ${saturdays.join(", ") || "なし"}`);
 
   if (saturdays.length > 0) {
-    const message = "【ふもとっぱら】6〜8月の土曜 空きあり(残りわずか含む)！\n" + saturdays.join("\n");
+    const message = "【ふもとっぱら】6〜8月の土曜「キャンプ宿泊」空きあり(残りわずか含む)！\n" + saturdays.join("\n");
     await sendLine(message);
   } else {
     console.log("【INFO】6〜8月の土曜日に空き(残りわずか含む)はありません。通知はスキップします。");
