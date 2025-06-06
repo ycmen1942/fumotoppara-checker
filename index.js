@@ -4,14 +4,22 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-function isTargetFridayOrSaturday(dateStr) {
+// =========================
+// 設定エリア
+// =========================
+const TARGET_YEAR = 2025;
+const TARGET_MONTHS = [5, 6, 7]; // 6〜8月（0始まりなので5=6月）
+const TARGET_WEEKDAYS = [5, 6];  // 金曜:5, 土曜:6
+// =========================
+
+function isTargetDate(dateStr) {
   const date = new Date(dateStr);
   const month = date.getMonth();
   const dayOfWeek = date.getDay();
   return (
-    date.getFullYear() === 2025 &&
-    [5, 6, 7].includes(month) && // 6〜8月
-    (dayOfWeek === 5 || dayOfWeek === 6) // 金・土
+    date.getFullYear() === TARGET_YEAR &&
+    TARGET_MONTHS.includes(month) &&
+    TARGET_WEEKDAYS.includes(dayOfWeek)
   );
 }
 
@@ -60,11 +68,11 @@ async function checkAvailability() {
   });
 
   console.log(`[INFO] 検出された空き日: ${availableDays.join(", ")}`);
-  const targetDays = availableDays.filter(isTargetFridayOrSaturday);
-  console.log(`[INFO] 対象の金・土: ${targetDays.join(", ") || "なし"}`);
+  const targetDays = availableDays.filter(isTargetDate);
+  console.log(`[INFO] 対象日: ${targetDays.join(", ") || "なし"}`);
 
   if (targetDays.length > 0) {
-    const message = "【ふもとっぱら】6〜8月の金・土に「キャンプ宿泊」の空きあり！\n" + targetDays.join("\n");
+    const message = `【ふもとっぱら】${TARGET_MONTHS.map(m => m + 1).join("〜")}月の金・土に空きあり！\n` + targetDays.join("\n");
     await sendLine(message);
   } else {
     console.log("【INFO】通知対象日なし。通知スキップ。");
