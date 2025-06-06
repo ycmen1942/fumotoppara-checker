@@ -1,5 +1,3 @@
-// index.js - ふもとっぱら予約状況をチェックしてLINEに通知（6〜8月の土曜・キャンプ宿泊）
-
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
@@ -7,16 +5,17 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-// 指定された日付文字列が 2025年6〜8月の土曜日かどうかを判定
-function isTargetSaturday(dateStr) {
+// 指定された日付文字列が 2025年6〜8月の金曜または土曜かどうかを判定
+function isTargetFridayOrSaturday(dateStr) {
   const date = new Date(dateStr);
   const month = date.getMonth();
+  const dayOfWeek = date.getDay();
   const isTarget = (
     date.getFullYear() === 2025 &&
     [5, 6, 7].includes(month) && // 5=6月, 6=7月, 7=8月
-    date.getDay() === 6 // 土曜日
+    (dayOfWeek === 5 || dayOfWeek === 6) // 金曜(5) or 土曜(6)
   );
-  console.log(`[DEBUG] ${dateStr} -> 月: ${month + 1}, 曜日: ${date.getDay()} => ${isTarget ? "対象" : "対象外"}`);
+  console.log(`[DEBUG] ${dateStr} -> 月: ${month + 1}, 曜日: ${dayOfWeek} => ${isTarget ? "対象" : "対象外"}`);
   return isTarget;
 }
 
@@ -69,43 +68,4 @@ async function checkAvailability() {
     return result;
   });
 
-  console.log(`[INFO] 「キャンプ宿泊」で○または△がある日: ${availableDays.join(", ")}`);
-  await browser.close();
-
-  // 6〜8月の土曜日に絞り込む
-  const saturdays = availableDays.filter(isTargetSaturday);
-  console.log(`[INFO] 対象の土曜: ${saturdays.join(", ") || "なし"}`);
-
-  if (saturdays.length > 0) {
-    const message = "【ふもとっぱら】6〜8月の土曜「キャンプ宿泊」空きあり(残りわずか含む)！\n" + saturdays.join("\n");
-    await sendLine(message);
-  } else {
-    console.log("【INFO】6〜8月の土曜日に空き(残りわずか含む)はありません。通知はスキップします。");
-  }
-}
-
-// LINEにメッセージを送信
-async function sendLine(message) {
-  console.log("LINE通知送信中...");
-  const res = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      to: LINE_USER_ID,
-      messages: [{ type: "text", text: message }],
-    }),
-  });
-
-  const json = await res.json();
-  if (!res.ok) {
-    console.error(`LINE API エラー: ${res.status} - ${JSON.stringify(json)}`);
-    throw new Error(`LINE API error: ${res.status}`);
-  }
-  console.log("LINE通知が完了しました。");
-}
-
-// 実行
-checkAvailability();
+  console.log(`[INFO] 「キャンプ宿泊」で○または△がある日: ${availableDays.
