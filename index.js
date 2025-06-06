@@ -4,22 +4,17 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-// =========================
-// 設定エリア
-// =========================
+// 条件をここで変更できるように
 const TARGET_YEAR = 2025;
-const TARGET_MONTHS = [5, 6, 7]; // 6〜8月（0始まりなので5=6月）
-const TARGET_WEEKDAYS = [5, 6];  // 金曜:5, 土曜:6
-// =========================
+const TARGET_MONTHS = [5, 6, 7]; // 6〜8月 (0-indexed)
+const TARGET_WEEKDAYS = [5, 6]; // 金・土
 
 function isTargetDate(dateStr) {
   const date = new Date(dateStr);
-  const month = date.getMonth();
-  const dayOfWeek = date.getDay();
   return (
     date.getFullYear() === TARGET_YEAR &&
-    TARGET_MONTHS.includes(month) &&
-    TARGET_WEEKDAYS.includes(dayOfWeek)
+    TARGET_MONTHS.includes(date.getMonth()) &&
+    TARGET_WEEKDAYS.includes(date.getDay())
   );
 }
 
@@ -46,6 +41,11 @@ async function checkAvailability() {
       .slice(1)
       .map(th => th.textContent.trim());
 
+    // カレンダーの見出し（例: "2025年6月"）から年月を取得
+    const caption = table.querySelector("caption")?.textContent.trim();
+    const [yearStr, monthStr] = caption.match(/(\d{4})年(\d{1,2})月/).slice(1, 3);
+    const year = parseInt(yearStr, 10);
+
     const rows = table.querySelectorAll("tbody tr");
     rows.forEach(row => {
       const planName = row.querySelector("th.cell-site p")?.textContent.trim();
@@ -57,7 +57,7 @@ async function checkAvailability() {
             const dateStr = headers[index];
             if (!dateStr.includes("/")) return;
             const [month, day] = dateStr.split("/").map(n => parseInt(n, 10));
-            const fullDate = `2025-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const fullDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             result.push(fullDate);
           }
         });
@@ -69,10 +69,10 @@ async function checkAvailability() {
 
   console.log(`[INFO] 検出された空き日: ${availableDays.join(", ")}`);
   const targetDays = availableDays.filter(isTargetDate);
-  console.log(`[INFO] 対象日: ${targetDays.join(", ") || "なし"}`);
+  console.log(`[INFO] 対象の金・土: ${targetDays.join(", ") || "なし"}`);
 
   if (targetDays.length > 0) {
-    const message = `【ふもとっぱら】${TARGET_MONTHS.map(m => m + 1).join("〜")}月の金・土に空きあり！\n` + targetDays.join("\n");
+    const message = `【ふもとっぱら】${TARGET_MONTHS.map(m => m + 1).join("〜")}月の金・土に「キャンプ宿泊」の空きあり！\n` + targetDays.join("\n");
     await sendLine(message);
   } else {
     console.log("【INFO】通知対象日なし。通知スキップ。");
