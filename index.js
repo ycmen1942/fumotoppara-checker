@@ -28,7 +28,7 @@ async function checkAvailability() {
 
   const page = await browser.newPage();
   console.log("アクセス中: ふもとっぱら予約ページ");
-  await page.goto("https://reserve.fumotoppara.net/reserved/reserved-date-selection", {
+  await page.goto("https://reserve.fumotoppara.net/reserved/reserved-calendar-list", {
     waitUntil: "networkidle0",
   });
 
