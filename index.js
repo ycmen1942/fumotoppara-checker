@@ -15,7 +15,7 @@ function isTargetDate(str) {
 }
 
 async function checkAvailability() {
-  const browser = await puppeteer.launch({ headless: true, args:["--no-sandbox"] });
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -29,41 +29,37 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
-  const data = await page.evaluate(async (start, end) => {
-    const res = await fetch("/api/shared/reserve/calendars", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startDate: start, endDate: end }),
+  // ページ内から空き状況をスクレイピング
+  const data = await page.evaluate(() => {
+    const rows = document.querySelectorAll(".calendar-frame .cell-site");
+    let results = [];
+    rows.forEach(row => {
+      const siteName = row.textContent.trim();
+      if (!siteName.includes("キャンプ宿泊")) return;
+
+      const tr = row.closest("tr");
+      const cells = tr.querySelectorAll("td.cell-date");
+      cells.forEach(cell => {
+        const date = cell.getAttribute("data-date");
+        const status = cell.textContent.trim();
+        results.push({ date, status });
+      });
     });
-
-    if (!res.ok) {
-      throw new Error("API request failed with status " + res.status);
-    }
-
-    const text = await res.text();
-    if (!text) {
-      throw new Error("API response is empty.");
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch (err) {
-      throw new SyntaxError("Invalid JSON: " + err.message);
-    }
-  }, START_DATE, END_DATE);
+    return results;
+  });
 
   await browser.close();
 
-  const plan = data.calendarsSiteList.find(
-    x => x.stayDiv === "STAY" && x.siteName.includes("キャンプ宿泊")
-  );
+  // 空き状況を解析
+  const available = data
+    .filter(d => d.date && ["○","△","残"].some(s => d.status.includes(s)))
+    .map(d => d.date);
 
-  const dates = plan.calendarDates || plan.dates;
-  const available = dates.filter(d => ["○", "△", "残"].includes(d.status)).map(d => d.date);
   console.log("空き日:", available.join(", "));
 
   const targets = available.filter(isTargetDate);
   console.log("対象金土:", targets.join(", ") || "なし");
+
   if (targets.length) {
     await sendLine("【ふもとっぱら】金・土空きあり！\n" + targets.join("\n"));
   }
@@ -74,12 +70,9 @@ async function sendLine(msg) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`,
+      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
     },
-    body: JSON.stringify({
-      to: LINE_USER_ID,
-      messages: [{ type: "text", text: msg }],
-    }),
+    body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: "text", text: msg }] })
   });
   console.log("LINE通知完了");
 }
