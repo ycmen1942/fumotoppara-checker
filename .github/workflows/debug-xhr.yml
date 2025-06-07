@@ -1,22 +1,35 @@
-name: Debug Fumotoppara XHR
+// debug-fetch.js
+const puppeteer = require("puppeteer");
 
-on:
-  workflow_dispatch:   # 手動トリガー
+(async () => {
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage();
 
-jobs:
-  debug-xhr:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+  await page.setRequestInterception(true);
+  page.on("request", req => req.continue());
+  page.on("response", async res => {
+    try {
+      const ct = res.headers()["content-type"] || "";
+      if (ct.includes("application/json")) {
+        const url = res.url();
+        const body = await res.text();
+        console.log("----");
+        console.log("URL :", url);
+        console.log("BODY:", body.slice(0, 300).replace(/\n/g, ""));
+      }
+    } catch (e) {
+      // ignore
+    }
+  });
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+  console.log("アクセス中: カレンダーページ");
+  await page.goto(
+    "https://reserve.fumotoppara.net/reserved/reserved-calendar-list",
+    { waitUntil: "networkidle2" }
+  );
 
-      - name: Install dependencies
-        run: npm install puppeteer
+  // ★ setTimeout で 5 秒待機
+  await new Promise(resolve => setTimeout(resolve, 5000));
 
-      - name: Run debug-fetch.js
-        run: node debug-fetch.js
+  await browser.close();
+})();
