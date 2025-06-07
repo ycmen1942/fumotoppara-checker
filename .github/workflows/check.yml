@@ -2,7 +2,7 @@ name: Check Fumotoppara
 
 on:
   schedule:
-    - cron: "15 * * * *"
+    - cron: "15 9 * * *"  # 毎日 日本時間18:15頃 (UTCで9:15)
   workflow_dispatch:
 
 jobs:
