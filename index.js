@@ -40,13 +40,17 @@ async function checkAvailability() {
     tables.forEach(table => {
       const caption = table.querySelector("caption")?.textContent.trim();
       let year = new Date().getFullYear();
+      let month = null;
 
       if (caption) {
         const match = caption.match(/(\d{4})年(\d{1,2})月/);
         if (match) {
           year = parseInt(match[1], 10);
+          month = parseInt(match[2], 10);
         }
       }
+
+      if (month === null) return;
 
       const headers = Array.from(table.querySelectorAll("thead th"))
         .slice(1)
@@ -60,10 +64,10 @@ async function checkAvailability() {
           cells.forEach((cell, index) => {
             const text = cell.textContent.trim();
             if (text.includes("○") || text.includes("△") || text.includes("残")) {
-              const dateStr = headers[index];
-              if (!dateStr.includes("/")) return;
-              const [month, day] = dateStr.split("/").map(n => parseInt(n, 10));
-              const fullDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+              const dayStr = headers[index];
+              if (!dayStr.includes("/")) return;
+              const [cellMonth, day] = dayStr.split("/").map(n => parseInt(n, 10));
+              const fullDate = `${year}-${String(cellMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               result.push(fullDate);
             }
           });
