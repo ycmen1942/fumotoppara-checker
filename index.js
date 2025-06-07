@@ -1,4 +1,3 @@
-// index.js
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
@@ -30,45 +29,57 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
-  // ブラウザコンテキスト内で認証済状態のまま API を呼ぶ
-  const data = await page.evaluate(
-    async (start, end) => {
-      const res = await fetch("/api/shared/reserve/calendars", {
-        method: "POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ startDate: start, endDate: end }),
-      });
-      return res.json();
-    },
-    START_DATE,
-    END_DATE
-  );
+  const data = await page.evaluate(async (start, end) => {
+    const res = await fetch("/api/shared/reserve/calendars", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ startDate: start, endDate: end }),
+    });
+
+    if (!res.ok) {
+      throw new Error("API request failed with status " + res.status);
+    }
+
+    const text = await res.text();
+    if (!text) {
+      throw new Error("API response is empty.");
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      throw new SyntaxError("Invalid JSON: " + err.message);
+    }
+  }, START_DATE, END_DATE);
 
   await browser.close();
 
-  // 以下は node-fetch 部分と同じ
   const plan = data.calendarsSiteList.find(
-    x => x.stayDiv==="STAY" && x.siteName.includes("キャンプ宿泊")
+    x => x.stayDiv === "STAY" && x.siteName.includes("キャンプ宿泊")
   );
+
   const dates = plan.calendarDates || plan.dates;
-  const available = dates.filter(d => ["○","△","残"].includes(d.status)).map(d=>d.date);
+  const available = dates.filter(d => ["○", "△", "残"].includes(d.status)).map(d => d.date);
   console.log("空き日:", available.join(", "));
 
   const targets = available.filter(isTargetDate);
-  console.log("対象金土:", targets.join(", ")||"なし");
+  console.log("対象金土:", targets.join(", ") || "なし");
   if (targets.length) {
-    await sendLine("【ふもとっぱら】金・土空きあり！\n"+targets.join("\n"));
+    await sendLine("【ふもとっぱら】金・土空きあり！\n" + targets.join("\n"));
   }
 }
 
 async function sendLine(msg) {
   await fetch("https://api.line.me/v2/bot/message/push", {
-    method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      Authorization:`Bearer ${LINE_ACCESS_TOKEN}`
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`,
     },
-    body:JSON.stringify({ to:LINE_USER_ID, messages:[{type:"text",text:msg}] })
+    body: JSON.stringify({
+      to: LINE_USER_ID,
+      messages: [{ type: "text", text: msg }],
+    }),
   });
   console.log("LINE通知完了");
 }
