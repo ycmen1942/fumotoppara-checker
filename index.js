@@ -1,110 +1,90 @@
-const puppeteer = require("puppeteer");
+// index.js
 const fetch = require("node-fetch");
 
+// LINE 通知設定
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-const LINE_USER_ID    = process.env.LINE_USER_ID;
+const LINE_USER_ID      = process.env.LINE_USER_ID;
+
+// API エンドポイントと取得期間（必要に応じて変更）
+const API_URL   = "https://reserve.fumotoppara.net/api/shared/reserve/calendars";
+const START     = "2025-06-01";
+const END       = "2025-09-30";
 
 // 通知対象の月と曜日
-const TARGET_MONTHS = [5, 6, 7]; // 6〜8月
-const TARGET_DAYS   = [5, 6];    // 金・土
-
-function isTargetDate(dateStr) {
-  const d = new Date(dateStr);
-  return (
-    d.getFullYear() === 2025 &&
-    TARGET_MONTHS.includes(d.getMonth()) &&
-    TARGET_DAYS.includes(d.getDay())
-  );
-}
+const TARGET_MONTHS  = [6, 7, 8];    // 1 月基準で指定：6月〜8月
+const TARGET_WEEKDAYS = [5, 6];      // 金曜=5, 土曜=6
 
 async function checkAvailability() {
-  const browser = await puppeteer.launch({
-    args: ["--no-sandbox","--disable-setuid-sandbox"],
-    headless: true
+  // ① JSON API を POST で取得
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ startDate: START, endDate: END }),
   });
-  const page = await browser.newPage();
+  if (!res.ok) {
+    console.error("API エラー:", res.status, await res.text());
+    return;
+  }
+  const data = await res.json();
 
-  // ① User-Agent偽装
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-    "Chrome/115.0.0.0 Safari/537.36"
+  // ② 「キャンプ宿泊」プランのデータを取得
+  const stayPlan = data.calendarsSiteList.find(
+    item => item.stayDiv === "STAY" && item.siteName.includes("キャンプ宿泊")
   );
-
-  console.log("アクセス中: ふもとっぱら予約ページ");
-  await page.goto(
-    "https://reserve.fumotoppara.net/reserved/reserved-calendar-list",
-    { waitUntil: "networkidle2" }
-  );
-
-  // ② 描画完了まで待機 (calendar-tableが表示されるまで)
-  await page.waitForSelector("table.calendar-table", { timeout: 15000 });
-
-  // ③ HTMLを取得して先頭をログ出力
-  const htmlSnippet = await page.content();
-  console.log("[DEBUG] ページ先頭HTML:\n", htmlSnippet.slice(0, 500));
-
-  // ④ 解析処理
-  const availableDays = await page.evaluate(() => {
-    const result = [];
-    document.querySelectorAll("table.calendar-table").forEach(table => {
-      // キャプションから年・月
-      const cap = table.querySelector("caption")?.textContent || "";
-      const m = cap.match(/(\d{4})年(\d{1,2})月/);
-      if (!m) return;
-      const [_, year, mon] = m;
-      const Y = parseInt(year, 10), M = parseInt(mon, 10);
-
-      // 日付ヘッダ
-      const headers = Array.from(table.querySelectorAll("thead th"))
-        .slice(1).map(th=>th.textContent.trim());
-
-      // 行をループ
-      table.querySelectorAll("tbody tr").forEach(row => {
-        const plan = row.querySelector("th.cell-site p")?.textContent || "";
-        if (!plan.includes("キャンプ宿泊")) return;
-        row.querySelectorAll("td.cell-date").forEach((cell,i) => {
-          if (/[○△残]/.test(cell.textContent.trim())) {
-            const [hMon, hDay] = headers[i].split("/").map(n=>parseInt(n,10));
-            result.push(
-              `${Y}-${String(hMon).padStart(2,"0")}-${String(hDay).padStart(2,"0")}`
-            );
-          }
-        });
-      });
-    });
-    return result;
-  });
-
-  console.log(`[INFO] 検出された空き日: ${availableDays.join(", ")}`);
-  const target = availableDays.filter(isTargetDate);
-  console.log(`[INFO] 対象の金・土: ${target.join(", ") || "なし"}`);
-
-  if (target.length) {
-    await sendLine(`【ふもとっぱら】6〜8月の金・土に空きあり！\n${target.join("\n")}`);
-  } else {
-    console.log("【INFO】通知対象日なし。通知スキップ。");
+  if (!stayPlan) {
+    console.error("キャンプ宿泊プランが見つかりません");
+    return;
   }
 
-  await browser.close();
+  // ③ 日付ごとのステータス配列を取得（例: stayPlan.calendarDates）
+  //    ※ 実際のキー名はレスポンス JSON をご確認ください。
+  const dates = stayPlan.calendarDates || stayPlan.dates;
+  if (!Array.isArray(dates)) {
+    console.error("日付データの形式が不明です：", Object.keys(stayPlan));
+    return;
+  }
+
+  // ④ 空き（○△残）の日付だけ抽出
+  const available = dates
+    .filter(d => ["○", "△", "残"].includes(d.status))
+    .map(d => d.date);  // date は "2025-06-13" のような文字列
+
+  console.log("API 検出された空き日:", available.join(", "));
+
+  // ⑤ 金曜・土曜かつ対象月のみフィルタ
+  const target = available.filter(str => {
+    const d = new Date(str);
+    return (
+      TARGET_MONTHS.includes(d.getMonth() + 1) &&
+      TARGET_WEEKDAYS.includes(d.getDay())
+    );
+  });
+
+  console.log("対象（金・土）:", target.join(", ") || "なし");
+
+  // ⑥ LINE へ通知
+  if (target.length > 0) {
+    const msg = `【ふもとっぱら】6〜8月の金・土に空きあり！\n` + target.join("\n");
+    await sendLine(msg);
+  } else {
+    console.log("通知対象なし。スキップ。");
+  }
 }
 
-async function sendLine(msg) {
-  console.log("LINE通知送信中...");
+async function sendLine(message) {
   const res = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
-      "Content-Type":"application/json",
-      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`,
     },
-    body: JSON.stringify({ to: LINE_USER_ID, messages:[{type:"text",text:msg}] })
+    body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: "text", text: message }] }),
   });
-  const text = await res.text();
   if (!res.ok) {
-    console.error("LINE API エラー:", res.status, text);
-    throw new Error("LINE通知失敗");
+    console.error("LINE通知エラー:", res.status, await res.text());
+  } else {
+    console.log("LINE通知完了");
   }
-  console.log("LINE通知完了:", text);
 }
 
 checkAvailability();
