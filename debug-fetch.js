@@ -9,14 +9,17 @@ const puppeteer = require("puppeteer");
   page.on("request", req => req.continue());
   page.on("response", async res => {
     try {
-      const url = res.url();
-      if (res.headers()["content-type"]?.includes("application/json")) {
+      const ct = res.headers()["content-type"] || "";
+      if (ct.includes("application/json")) {
+        const url = res.url();
         const body = await res.text();
         console.log("----");
-        console.log("URL:", url);
+        console.log("URL :", url);
         console.log("BODY:", body.slice(0, 300).replace(/\n/g, ""));
       }
-    } catch (e) {}
+    } catch (e) {
+      // ignore
+    }
   });
 
   console.log("アクセス中: カレンダーページ");
@@ -25,6 +28,8 @@ const puppeteer = require("puppeteer");
     { waitUntil: "networkidle2" }
   );
 
-  await page.waitForTimeout(5000);
+  // ★ setTimeout で 5 秒待機
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
   await browser.close();
 })();
