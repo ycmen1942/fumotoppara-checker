@@ -2,18 +2,18 @@ const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-const LINE_USER_ID      = process.env.LINE_USER_ID;
+const LINE_USER_ID = process.env.LINE_USER_ID;
 
 const START_DATE = "2025-06-01";
-const END_DATE   = "2025-09-30";
-const TARGET_MONTHS  = [6, 7, 8];
-const TARGET_WEEKDAYS = [5, 6]; // 金=5, 土=6
+const END_DATE = "2025-09-30";
+const TARGET_MONTHS = [6, 7, 8];
+const TARGET_WEEKDAY = 6; // 土曜日のみ
 
 function isTargetDate(str) {
   const d = new Date(str);
   return (
     TARGET_MONTHS.includes(d.getMonth() + 1) &&
-    TARGET_WEEKDAYS.includes(d.getDay()) &&
+    d.getDay() === TARGET_WEEKDAY &&
     d >= new Date(START_DATE) &&
     d <= new Date(END_DATE)
   );
@@ -35,11 +35,18 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
+  // テーブル読み込みを明示的に待機
+  await page.waitForSelector("table.calendar-table");
+
   const data = await page.evaluate(() => {
     const results = [];
 
     const table = document.querySelector("table.calendar-table");
+    if (!table) return results;
+
     const headerRows = table.querySelectorAll("thead tr");
+    if (headerRows.length < 2) return results;
+
     const monthRow = headerRows[0];
     const dayRow = headerRows[1];
 
@@ -60,12 +67,13 @@ async function checkAvailability() {
       const cells = row.querySelectorAll("td.cell-date");
 
       cells.forEach((cell, i) => {
-        const symbol = cell.textContent.trim();
         const p = cell.querySelector("p");
         if (!p || !["〇", "△", "残"].some(s => p.innerText.includes(s))) return;
 
-        const month = months[i];
         const dayLabel = days[i];
+        if (dayLabel !== "土") return; // 土曜日のみ対象
+
+        const month = months[i];
 
         // セル内の数字（日）を取得（例：△ 14）
         const dayNumMatch = cell.innerText.match(/\d+/);
@@ -74,7 +82,7 @@ async function checkAvailability() {
         const day = dayNumMatch[0].padStart(2, "0");
         const fullDate = `2025-${month.padStart(2, "0")}-${day}`;
 
-        results.push({ date: fullDate, status: symbol });
+        results.push({ date: fullDate, status: p.innerText.trim() });
       });
     });
 
@@ -83,18 +91,14 @@ async function checkAvailability() {
 
   await browser.close();
 
-  // 空き状況を解析
-  const available = data
-    .filter(d => d.date && ["○", "△", "残"].some(s => d.status.includes(s)))
-    .map(d => d.date);
-
+  const available = data.map(d => d.date);
   console.log("空き日:", available.join(", "));
 
   const targets = available.filter(isTargetDate);
-  console.log("対象金土:", targets.join(", ") || "なし");
+  console.log("対象土曜日:", targets.join(", ") || "なし");
 
   if (targets.length) {
-    await sendLine("【ふもとっぱら】金・土空きあり！\n" + targets.join("\n"));
+    await sendLine("【ふもとっぱら】土曜に空きあり！\n" + targets.join("\n"));
   }
 }
 
