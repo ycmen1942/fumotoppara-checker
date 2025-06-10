@@ -4,14 +4,12 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID      = process.env.LINE_USER_ID;
 
-const START_DATE = "2025-06-01";
-const END_DATE   = "2025-09-30";
-const TARGET_MONTHS  = [6,7,8];
-const TARGET_WEEKDAYS = [5,6];
+const TARGET_MONTHS  = [6, 7, 8];      // 6月, 7月, 8月
+const TARGET_WEEKDAYS = [5, 6];       // 金曜(5), 土曜(6)
 
 function isTargetDate(str) {
   const d = new Date(str);
-  return TARGET_MONTHS.includes(d.getMonth()+1) && TARGET_WEEKDAYS.includes(d.getDay());
+  return TARGET_MONTHS.includes(d.getMonth() + 1) && TARGET_WEEKDAYS.includes(d.getDay());
 }
 
 async function checkAvailability() {
@@ -29,7 +27,6 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
-  // ページ内から空き状況をスクレイピング
   const data = await page.evaluate(() => {
     const rows = document.querySelectorAll(".calendar-frame .cell-site");
     let results = [];
@@ -50,9 +47,8 @@ async function checkAvailability() {
 
   await browser.close();
 
-  // 空き状況を解析
   const available = data
-    .filter(d => d.date && ["○","△","残"].some(s => d.status.includes(s)))
+    .filter(d => d.date && ["○", "△", "残"].some(s => d.status.includes(s)))
     .map(d => d.date);
 
   console.log("空き日:", available.join(", "));
@@ -72,7 +68,10 @@ async function sendLine(msg) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
     },
-    body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: "text", text: msg }] })
+    body: JSON.stringify({
+      to: LINE_USER_ID,
+      messages: [{ type: "text", text: msg }]
+    })
   });
   console.log("LINE通知完了");
 }
