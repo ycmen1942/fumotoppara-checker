@@ -1,17 +1,27 @@
-name: Check Fumotoppara
+name: Fumotoppara Checker
 
 on:
   schedule:
-    - cron: '*/50 * * * *'  # 毎50分
-  workflow_dispatch:
+    - cron: '*/10 * * * *'  # 毎10分に一度実行
+  workflow_dispatch:        # 手動実行も可能
 
 jobs:
-  check:
+  notify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - run: npm install puppeteer
-      - run: node index.js
+
+      - name: Install dependencies
+        run: npm install puppeteer node-fetch
+
+      - name: Run script
+        env:
+          LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: node index.js
