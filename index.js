@@ -7,7 +7,7 @@ const LINE_USER_ID = process.env.LINE_USER_ID;
 const START_DATE = "2025-06-01";
 const END_DATE = "2025-09-30";
 const TARGET_MONTHS = [6, 7, 8];
-const TARGET_WEEKDAY = 6; // 土曜日のみ
+const TARGET_WEEKDAY = 6; // 土曜日
 
 function isTargetDate(str) {
   const d = new Date(str);
@@ -35,17 +35,22 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
-  // テーブル読み込みを明示的に待機
   await page.waitForSelector("table.calendar-table");
 
   const data = await page.evaluate(() => {
     const results = [];
 
     const table = document.querySelector("table.calendar-table");
-    if (!table) return results;
+    if (!table) {
+      console.log("❌ table.calendar-table が見つかりません");
+      return results;
+    }
 
     const headerRows = table.querySelectorAll("thead tr");
-    if (headerRows.length < 2) return results;
+    if (headerRows.length < 2) {
+      console.log("❌ ヘッダー行が足りません");
+      return results;
+    }
 
     const monthRow = headerRows[0];
     const dayRow = headerRows[1];
@@ -58,9 +63,12 @@ async function checkAvailability() {
       th.innerText.trim()
     );
 
+    console.log("📅 月リスト:", months);
+    console.log("📆 曜日リスト:", days);
+
     const bodyRows = table.querySelectorAll("tbody tr");
 
-    bodyRows.forEach(row => {
+    bodyRows.forEach((row, rowIndex) => {
       const siteCell = row.querySelector("th.cell-site");
       if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
 
@@ -68,21 +76,24 @@ async function checkAvailability() {
 
       cells.forEach((cell, i) => {
         const p = cell.querySelector("p");
-        if (!p || !["〇", "△", "残"].some(s => p.innerText.includes(s))) return;
+        if (!p) return;
 
+        const statusText = p.innerText.trim();
         const dayLabel = days[i];
-        if (dayLabel !== "土") return; // 土曜日のみ対象
-
         const month = months[i];
 
-        // セル内の数字（日）を取得（例：△ 14）
         const dayNumMatch = cell.innerText.match(/\d+/);
-        if (!dayNumMatch) return;
+        const day = dayNumMatch ? dayNumMatch[0].padStart(2, "0") : null;
 
-        const day = dayNumMatch[0].padStart(2, "0");
-        const fullDate = `2025-${month.padStart(2, "0")}-${day}`;
+        const fullDate = month && day ? `2025-${month.padStart(2, "0")}-${day}` : null;
 
-        results.push({ date: fullDate, status: p.innerText.trim() });
+        console.log(`🔍 ${month}月${day || "?"}日 (${dayLabel}) → 状態: ${statusText}`);
+
+        if (!fullDate) return;
+        if (dayLabel !== "土") return; // 土曜日のみ
+        if (!["〇", "△", "残"].some(s => statusText.includes(s))) return;
+
+        results.push({ date: fullDate, status: statusText });
       });
     });
 
@@ -92,10 +103,10 @@ async function checkAvailability() {
   await browser.close();
 
   const available = data.map(d => d.date);
-  console.log("空き日:", available.join(", "));
+  console.log("✅ 空き日候補:", available.join(", ") || "なし");
 
   const targets = available.filter(isTargetDate);
-  console.log("対象土曜日:", targets.join(", ") || "なし");
+  console.log("🎯 対象土曜日:", targets.join(", ") || "なし");
 
   if (targets.length) {
     await sendLine("【ふもとっぱら】土曜に空きあり！\n" + targets.join("\n"));
@@ -114,7 +125,7 @@ async function sendLine(msg) {
       messages: [{ type: "text", text: msg }]
     })
   });
-  console.log("LINE通知完了");
+  console.log("📲 LINE通知完了");
 }
 
 checkAvailability();
