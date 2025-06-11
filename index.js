@@ -7,11 +7,6 @@ const LINE_USER_ID = process.env.LINE_USER_ID;
 const START_DATE = "2025-06-01";
 const END_DATE = "2025-09-30";
 
-function isTargetDate(str) {
-  const d = new Date(str);
-  return d.getDay() === 6 && d >= new Date(START_DATE) && d <= new Date(END_DATE);
-}
-
 async function checkAvailability() {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
@@ -36,15 +31,16 @@ async function checkAvailability() {
     }
 
     const rows = calendarTable.querySelectorAll("tr");
-    let dateHeaders = [];
+    console.log(`📏 行数: ${rows.length}`);
 
+    let dateHeaders = [];
     rows.forEach((tr, idx) => {
       if (idx === 0) {
         dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th, index) => {
           const ps = th.querySelectorAll("p");
           const dateText = ps[0]?.innerText.trim(); // 6/14
           const dayOfWeek = ps[1]?.innerText.trim(); // 土
-          console.log(`📅 ヘッダー${index}: ${dateText} (${dayOfWeek})`);
+          console.log(`🗓️ ヘッダー[${index}]: ${dateText} (${dayOfWeek})`);
           return { dateText, dayOfWeek };
         });
       }
@@ -54,20 +50,20 @@ async function checkAvailability() {
       const siteCell = row.querySelector("th.cell-site");
       if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
 
-      console.log(`🔍 チェック対象 row[${rowIndex}] - ${siteCell.innerText.trim()}`);
+      console.log(`🔍 行[${rowIndex}] チェック: ${siteCell.innerText.trim()}`);
       const cells = row.querySelectorAll("td.cell-date");
 
       cells.forEach((cell, i) => {
         const status = cell.innerText.trim();
         const header = dateHeaders[i];
         if (!header || !header.dateText || !header.dayOfWeek) {
-          console.log(`⚠️ データ欠落: index=${i}, header=${JSON.stringify(header)}`);
+          console.log(`⚠️ データ不足: index=${i}, header=${JSON.stringify(header)}`);
           return;
         }
 
         const [monthStr, dayStr] = header.dateText.split("/");
         if (!monthStr || !dayStr) {
-          console.log(`⚠️ 日付パース失敗: ${header.dateText}`);
+          console.log(`⚠️ 日付分解失敗: ${header.dateText}`);
           return;
         }
 
@@ -76,7 +72,7 @@ async function checkAvailability() {
         const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
 
         console.log(
-          `→ 判定対象: ${date} (${header.dayOfWeek}) | 状態=${status} | isSat=${isSat} | isAvailable=${isAvailable}`
+          `→ ${date} (${header.dayOfWeek}) | ステータス: "${status}" | isSat=${isSat} | isAvailable=${isAvailable}`
         );
 
         if (isSat && isAvailable) {
