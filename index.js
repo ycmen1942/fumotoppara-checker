@@ -4,12 +4,15 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-const START_DATE = "2025-06-01";
-const END_DATE = "2025-09-30";
-
 async function checkAvailability() {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
+
+  // Puppeteer 内の console.log を Node 側に表示させる
+  page.on("console", msg => {
+    for (let i = 0; i < msg.args().length; ++i)
+      msg.args()[i].jsonValue().then(v => console.log(`🧭 [ブラウザログ] ${v}`));
+  });
 
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
