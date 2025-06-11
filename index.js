@@ -7,7 +7,7 @@ const LINE_USER_ID = process.env.LINE_USER_ID;
 const START_DATE = "2025-06-01";
 const END_DATE = "2025-09-30";
 const TARGET_MONTHS = [6, 7, 8];
-const TARGET_WEEKDAY = 6; // 土曜日
+const TARGET_WEEKDAY = 6; // 土曜
 
 function isTargetDate(str) {
   const d = new Date(str);
@@ -30,10 +30,9 @@ async function checkAvailability() {
   );
 
   console.log("アクセス中: カレンダーページ");
-  await page.goto(
-    "https://reserve.fumotoppara.net/reserved/reserved-calendar-list",
-    { waitUntil: "networkidle2" }
-  );
+  await page.goto("https://reserve.fumotoppara.net/reserved/reserved-calendar-list", {
+    waitUntil: "networkidle2"
+  });
 
   await page.waitForSelector("table.calendar-table");
 
@@ -42,29 +41,23 @@ async function checkAvailability() {
 
     const table = document.querySelector("table.calendar-table");
     if (!table) {
-      console.log("❌ table.calendar-table が見つかりません");
+      console.log("❌ table.calendar-table not found");
       return results;
     }
 
     const headerRows = table.querySelectorAll("thead tr");
-    if (headerRows.length < 2) {
-      console.log("❌ ヘッダー行が足りません");
-      return results;
-    }
-
     const monthRow = headerRows[0];
     const dayRow = headerRows[1];
 
     const months = Array.from(monthRow.querySelectorAll("th.cell-date")).map(th =>
       th.innerText.trim().replace("月", "")
     );
-
     const days = Array.from(dayRow.querySelectorAll("th.cell-date")).map(th =>
       th.innerText.trim()
     );
 
-    console.log("📅 月リスト:", months);
-    console.log("📆 曜日リスト:", days);
+    console.log("📅 ヘッダー（月）:", months);
+    console.log("📆 ヘッダー（曜日）:", days);
 
     const bodyRows = table.querySelectorAll("tbody tr");
 
@@ -75,25 +68,22 @@ async function checkAvailability() {
       const cells = row.querySelectorAll("td.cell-date");
 
       cells.forEach((cell, i) => {
+        const rawText = cell.innerText.trim();
         const p = cell.querySelector("p");
-        if (!p) return;
+        const status = p ? p.innerText.trim() : "(pタグなし)";
+        const dayLabel = days[i] || "?";
+        const month = months[i] || "?";
 
-        const statusText = p.innerText.trim();
-        const dayLabel = days[i];
-        const month = months[i];
-
-        const dayNumMatch = cell.innerText.match(/\d+/);
-        const day = dayNumMatch ? dayNumMatch[0].padStart(2, "0") : null;
-
+        const match = cell.innerText.match(/\d+/);
+        const day = match ? match[0].padStart(2, "0") : null;
         const fullDate = month && day ? `2025-${month.padStart(2, "0")}-${day}` : null;
 
-        console.log(`🔍 ${month}月${day || "?"}日 (${dayLabel}) → 状態: ${statusText}`);
+        console.log(`🔍 ${month}月${day || "??"}日 (${dayLabel}) → 状態: ${status}`);
 
-        if (!fullDate) return;
-        if (dayLabel !== "土") return; // 土曜日のみ
-        if (!["〇", "△", "残"].some(s => statusText.includes(s))) return;
+        if (!fullDate || dayLabel !== "土") return;
+        if (!["〇", "△", "残"].some(s => status.includes(s))) return;
 
-        results.push({ date: fullDate, status: statusText });
+        results.push({ date: fullDate, status });
       });
     });
 
