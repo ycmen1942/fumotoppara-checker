@@ -24,6 +24,9 @@ async function checkAvailability() {
     { waitUntil: "networkidle2" }
   );
 
+  // 対策: カレンダーテーブルが表示されるまで待機
+  await page.waitForSelector(".calendar-frame table", { timeout: 10000 });
+
   const data = await page.evaluate(() => {
     const results = [];
 
