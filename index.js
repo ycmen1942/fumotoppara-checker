@@ -1,61 +1,113 @@
-const data = await page.evaluate(() => {
-  const results = [];
+const puppeteer = require("puppeteer");
+const fetch = require("node-fetch");
 
-  const calendarTable = document.querySelector(".calendar-frame table");
-  if (!calendarTable) {
-    console.log("⚠️ calendar-table が見つかりません");
-    return results;
-  }
+const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
+const LINE_USER_ID = process.env.LINE_USER_ID;
 
-  const rows = calendarTable.querySelectorAll("tr");
+const START_DATE = "2025-06-01";
+const END_DATE = "2025-09-30";
 
-  let dateHeaders = [];
-  rows.forEach((tr, idx) => {
-    if (idx === 0) {
-      dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th, index) => {
-        const ps = th.querySelectorAll("p");
-        const dateText = ps[0]?.innerText.trim(); // 6/14
-        const dayOfWeek = ps[1]?.innerText.trim(); // 土
-        console.log(`📅 ヘッダー${index}: ${dateText} (${dayOfWeek})`);
-        return { dateText, dayOfWeek };
-      });
+function isTargetDate(str) {
+  const d = new Date(str);
+  return d.getDay() === 6 && d >= new Date(START_DATE) && d <= new Date(END_DATE);
+}
+
+async function checkAvailability() {
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage();
+
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+  );
+
+  console.log("アクセス中: カレンダーページ");
+  await page.goto(
+    "https://reserve.fumotoppara.net/reserved/reserved-calendar-list",
+    { waitUntil: "networkidle2" }
+  );
+
+  const data = await page.evaluate(() => {
+    const results = [];
+
+    const calendarTable = document.querySelector(".calendar-frame table");
+    if (!calendarTable) {
+      console.log("⚠️ calendar-table が見つかりません");
+      return results;
     }
-  });
 
-  rows.forEach((row, rowIndex) => {
-    const siteCell = row.querySelector("th.cell-site");
-    if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
+    const rows = calendarTable.querySelectorAll("tr");
+    let dateHeaders = [];
 
-    console.log(`🔍 チェック対象 row[${rowIndex}] - ${siteCell.innerText.trim()}`);
-    const cells = row.querySelectorAll("td.cell-date");
-
-    cells.forEach((cell, i) => {
-      const status = cell.innerText.trim();
-      const header = dateHeaders[i];
-      if (!header || !header.dateText || !header.dayOfWeek) {
-        console.log(`⚠️ データ欠落: index=${i}, header=${JSON.stringify(header)}`);
-        return;
-      }
-
-      const [monthStr, dayStr] = header.dateText.split("/");
-      if (!monthStr || !dayStr) {
-        console.log(`⚠️ 日付パース失敗: ${header.dateText}`);
-        return;
-      }
-
-      const date = `2025-${monthStr.padStart(2, "0")}-${dayStr.padStart(2, "0")}`;
-      const isSat = header.dayOfWeek === "土";
-      const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
-
-      console.log(
-        `→ 判定対象: ${date} (${header.dayOfWeek}) | 状態=${status} | isSat=${isSat} | isAvailable=${isAvailable}`
-      );
-
-      if (isSat && isAvailable) {
-        results.push({ date, status });
+    rows.forEach((tr, idx) => {
+      if (idx === 0) {
+        dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th, index) => {
+          const ps = th.querySelectorAll("p");
+          const dateText = ps[0]?.innerText.trim(); // 6/14
+          const dayOfWeek = ps[1]?.innerText.trim(); // 土
+          console.log(`📅 ヘッダー${index}: ${dateText} (${dayOfWeek})`);
+          return { dateText, dayOfWeek };
+        });
       }
     });
+
+    rows.forEach((row, rowIndex) => {
+      const siteCell = row.querySelector("th.cell-site");
+      if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
+
+      console.log(`🔍 チェック対象 row[${rowIndex}] - ${siteCell.innerText.trim()}`);
+      const cells = row.querySelectorAll("td.cell-date");
+
+      cells.forEach((cell, i) => {
+        const status = cell.innerText.trim();
+        const header = dateHeaders[i];
+        if (!header || !header.dateText || !header.dayOfWeek) {
+          console.log(`⚠️ データ欠落: index=${i}, header=${JSON.stringify(header)}`);
+          return;
+        }
+
+        const [monthStr, dayStr] = header.dateText.split("/");
+        if (!monthStr || !dayStr) {
+          console.log(`⚠️ 日付パース失敗: ${header.dateText}`);
+          return;
+        }
+
+        const date = `2025-${monthStr.padStart(2, "0")}-${dayStr.padStart(2, "0")}`;
+        const isSat = header.dayOfWeek === "土";
+        const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
+
+        console.log(
+          `→ 判定対象: ${date} (${header.dayOfWeek}) | 状態=${status} | isSat=${isSat} | isAvailable=${isAvailable}`
+        );
+
+        if (isSat && isAvailable) {
+          results.push({ date, status });
+        }
+      });
+    });
+
+    return results;
   });
 
-  return results;
-});
+  await browser.close();
+
+  const available = data.map(d => d.date);
+  console.log("✅ 土曜空き候補:", available.join(", ") || "なし");
+
+  if (available.length) {
+    await sendLine("【ふもとっぱら】土曜に空きあり！\n" + available.join("\n"));
+  }
+}
+
+async function sendLine(msg) {
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
+    },
+    body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: "text", text: msg }] })
+  });
+  console.log("📨 LINE通知完了");
+}
+
+checkAvailability();
