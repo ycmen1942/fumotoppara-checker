@@ -1,13 +1,19 @@
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
+const fs = require("fs");
+const path = require("path");
 
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
+const CACHE_DIR = ".notified_cache";
+const CACHE_FILE = path.join(CACHE_DIR, "notified_cache.json");
 
 // ✅ チェック対象の日付（必要に応じて変更）
 const targetDates = ["2025-07-10", "2025-07-18", "2025-08-10"];
 
 async function checkAvailability() {
+  const notifiedMap = loadNotifiedMap();
+
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
 
@@ -51,7 +57,7 @@ async function checkAvailability() {
         rows.forEach((tr, idx) => {
           if (idx === 0) {
             dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
-              const dateText = th.querySelector("p")?.innerText.trim(); // 最初の <p> が "8/1"
+              const dateText = th.querySelector("p")?.innerText.trim();
               if (!dateText) return null;
 
               const [monthStr, dayStr] = dateText.split("/");
@@ -105,11 +111,24 @@ async function checkAvailability() {
 
   await browser.close();
 
-  const available = data.map(d => d.date);
-  console.log("✅ 指定日空き:", available.join(", ") || "なし");
+  const now = new Date();
+  const available = data
+    .filter(({ date }) => {
+      const lastNotified = notifiedMap[date];
+      if (!lastNotified) return true;
+      const elapsed = now - new Date(lastNotified);
+      return elapsed > 1000 * 60 * 60 * 24; // 24時間超
+    })
+    .map(d => d.date);
+
+  console.log("✅ 通知対象:", available.join(", ") || "なし");
 
   if (available.length) {
     await sendLine("【ふもとっぱら】指定日に空きあり！\n" + available.join("\n"));
+    available.forEach(date => {
+      notifiedMap[date] = now.toISOString();
+    });
+    saveNotifiedMap(notifiedMap);
   }
 }
 
@@ -126,6 +145,28 @@ async function sendLine(msg) {
     })
   });
   console.log("📨 LINE通知完了");
+}
+
+function loadNotifiedMap() {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const content = fs.readFileSync(CACHE_FILE, "utf8");
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.warn("⚠️ 通知キャッシュ読み込み失敗:", e.message);
+  }
+  return {};
+}
+
+function saveNotifiedMap(map) {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(map, null, 2));
+    console.log("💾 通知キャッシュ保存完了");
+  } catch (e) {
+    console.error("❌ 通知キャッシュ保存失敗:", e.message);
+  }
 }
 
 checkAvailability();
