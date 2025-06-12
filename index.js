@@ -1,10 +1,16 @@
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
-const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-const LINE_USER_ID = process.env.LINE_USER_ID;
+// 設定部分（必要に応じて.env化してもOK）
+const CONFIG = {
+  targetDates: ["2025-07-20", "2025-08-10"], // チェックしたい日を列挙
+  keywords: ["○", "△", "残"],               // 空きステータス
+  notifyEnabled: true,
+  lineAccessToken: process.env.LINE_ACCESS_TOKEN,
+  lineUserId: process.env.LINE_USER_ID
+};
 
-async function checkAvailability() {
+async function fetchAvailability() {
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage();
 
@@ -22,99 +28,98 @@ async function checkAvailability() {
   );
 
   const url = "https://reserve.fumotoppara.net/reserved/reserved-calendar-list";
-  console.log("アクセス中: カレンダーページ");
+  await page.goto(url, { waitUntil: "domcontentloaded" });
 
-  let retries = 3;
-  let success = false;
-  let data = [];
+  try {
+    await page.waitForFunction(() => {
+      const table = document.querySelector(".calendar-frame table");
+      return table && table.querySelectorAll("tr").length > 1;
+    }, { timeout: 15000 });
 
-  while (retries-- > 0 && !success) {
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    const data = await page.evaluate(() => {
+      const results = [];
+      const calendarTable = document.querySelector(".calendar-frame table");
+      const rows = calendarTable.querySelectorAll("tr");
 
-    try {
-      // 行数が2以上になるまで待機
-      await page.waitForFunction(() => {
-        const table = document.querySelector(".calendar-frame table");
-        return table && table.querySelectorAll("tr").length > 1;
-      }, { timeout: 15000 });
-
-      data = await page.evaluate(() => {
-        const results = [];
-        const calendarTable = document.querySelector(".calendar-frame table");
-        const rows = calendarTable.querySelectorAll("tr");
-
-        let dateHeaders = [];
-        rows.forEach((tr, idx) => {
-          if (idx === 0) {
-            dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th, index) => {
-              const ps = th.querySelectorAll("p");
-              const dateText = ps[0]?.innerText.trim();
-              const dayOfWeek = ps[1]?.innerText.trim();
-              console.log(`🗓️ ヘッダー[${index}]: ${dateText} (${dayOfWeek})`);
-              return { dateText, dayOfWeek };
-            });
-          }
-        });
-
-        rows.forEach((row, rowIndex) => {
-          const siteCell = row.querySelector("th.cell-site");
-          if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
-
-          const cells = row.querySelectorAll("td.cell-date");
-
-          cells.forEach((cell, i) => {
-            const status = cell.innerText.trim();
-            const header = dateHeaders[i];
-            if (!header || !header.dateText || !header.dayOfWeek) return;
-
-            const [monthStr, dayStr] = header.dateText.split("/");
-            const date = `2025-${monthStr.padStart(2, "0")}-${dayStr.padStart(2, "0")}`;
-            const isSat = header.dayOfWeek === "土";
-            const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
-
-            if (isSat && isAvailable) {
-              results.push({ date, status });
-            }
+      let dateHeaders = [];
+      rows.forEach((tr, idx) => {
+        if (idx === 0) {
+          dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
+            const ps = th.querySelectorAll("p");
+            const dateText = ps[0]?.innerText.trim(); // 6/14
+            const dayOfWeek = ps[1]?.innerText.trim(); // 曜日
+            return { dateText, dayOfWeek };
           });
-        });
-
-        return results;
+        }
       });
 
-      if (data.length > 0 || retries === 0) {
-        success = true;
-      } else {
-        console.log("🔄 データが空、再試行します...");
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      rows.forEach((row) => {
+        const siteCell = row.querySelector("th.cell-site");
+        if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
 
-    } catch (e) {
-      console.error("❌ ページ処理中にエラー:", e.message);
-      await page.screenshot({ path: `error_${Date.now()}.png`, fullPage: true });
-      console.log("📸 スクリーンショット保存しました");
-    }
-  }
+        const cells = row.querySelectorAll("td.cell-date");
 
-  await browser.close();
+        cells.forEach((cell, i) => {
+          const status = cell.innerText.trim();
+          const header = dateHeaders[i];
+          if (!header || !header.dateText) return;
 
-  const available = data.map(d => d.date);
-  console.log("✅ 土曜空き候補:", available.join(", ") || "なし");
+          const [monthStr, dayStr] = header.dateText.split("/");
+          const date = `2025-${monthStr.padStart(2, "0")}-${dayStr.padStart(2, "0")}`;
+          results.push({ date, status });
+        });
+      });
 
-  if (available.length) {
-    await sendLine("【ふもとっぱら】土曜に空きあり！\n" + available.join("\n"));
+      return results;
+    });
+
+    await browser.close();
+    return data;
+
+  } catch (e) {
+    console.error("❌ データ抽出中にエラー:", e.message);
+    await page.screenshot({ path: `error_${Date.now()}.png`, fullPage: true });
+    await browser.close();
+    return [];
   }
 }
 
+function filterAvailableDates(data) {
+  return data.filter(entry =>
+    CONFIG.targetDates.includes(entry.date) &&
+    CONFIG.keywords.some(k => entry.status.includes(k))
+  );
+}
+
 async function sendLine(msg) {
+  if (!CONFIG.notifyEnabled) {
+    console.log("🔕 LINE通知は無効です");
+    return;
+  }
+
   await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
+      Authorization: `Bearer ${CONFIG.lineAccessToken}`
     },
-    body: JSON.stringify({ to: LINE_USER_ID, messages: [{ type: "text", text: msg }] })
+    body: JSON.stringify({ to: CONFIG.lineUserId, messages: [{ type: "text", text: msg }] })
   });
+
   console.log("📨 LINE通知完了");
 }
 
-checkAvailability();
+async function main() {
+  const rawData = await fetchAvailability();
+  const available = filterAvailableDates(rawData);
+
+  console.log("✅ 指定日空き:", available.map(d => `${d.date}(${d.status})`).join(", ") || "なし");
+
+  if (available.length > 0) {
+    const msg = "【ふもとっぱら】空きあり：\n" +
+                available.map(d => `${d.date}（${d.status}）`).join("\n");
+    await sendLine(msg);
+  }
+}
+
+main();
