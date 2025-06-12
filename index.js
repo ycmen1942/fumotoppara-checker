@@ -3,7 +3,7 @@ const fetch = require("node-fetch");
 
 // 設定部分（必要に応じて.env化してもOK）
 const CONFIG = {
-  targetDates: ["2025-07-20", "2025-08-10"], // チェックしたい日を列挙
+  targetDates: ["2025-07-10","2025-07-18", "2025-08-10"], // チェックしたい日を列挙
   keywords: ["○", "△", "残"],               // 空きステータス
   notifyEnabled: true,
   lineAccessToken: process.env.LINE_ACCESS_TOKEN,
