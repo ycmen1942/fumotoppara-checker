@@ -77,7 +77,7 @@ async function checkAvailability() {
 
             const date = `2025-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
             const isTarget = targetDates.includes(date);
-            const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
+            const isAvailable = ["〇", "△", "残"].some(s => status.includes(s));
 
             console.log(
               `→ ${date} | ステータス: "${status}" | isTarget=${isTarget} | isAvailable=${isAvailable}`
