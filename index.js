@@ -4,7 +4,7 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-// ✅ チェック対象の日付（必要に応じて変更）
+// ✅ チェック対象の日付
 const targetDates = ["2025-07-10", "2025-07-18", "2025-08-10"];
 
 async function checkAvailability() {
@@ -50,15 +50,23 @@ async function checkAvailability() {
         let dateHeaders = [];
         rows.forEach((tr, idx) => {
           if (idx === 0) {
-            dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th, index) => {
-              const text = th.innerText.trim(); // 例: "6/14"
+            dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
+              const firstP = th.querySelector("p");
+              if (!firstP) {
+                console.log("⚠️ 日付ヘッダーに <p> が見つかりません");
+                return null;
+              }
+              const text = firstP.innerText.trim(); // 例: "8/1"
               const [monthStr, dayStr] = text.split("/");
               if (!monthStr || !dayStr) {
                 console.log(`⚠️ 日付ヘッダーの分解失敗: "${text}"`);
                 return null;
               }
-              return { month: monthStr, day: dayStr };
-            });
+              return {
+                month: monthStr.padStart(2, "0"),
+                day: dayStr.padStart(2, "0"),
+              };
+            }).filter(Boolean);
           }
         });
 
@@ -67,13 +75,12 @@ async function checkAvailability() {
           if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
 
           const cells = row.querySelectorAll("td.cell-date");
-
           cells.forEach((cell, i) => {
             const status = cell.innerText.trim();
             const header = dateHeaders[i];
             if (!header) return;
 
-            const date = `2025-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
+            const date = `2025-${header.month}-${header.day}`;
             const isTarget = targetDates.includes(date);
             const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
 
