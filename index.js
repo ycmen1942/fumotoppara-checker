@@ -1,10 +1,9 @@
 const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
-// 設定部分（必要に応じて.env化してもOK）
 const CONFIG = {
-  targetDates: ["2025-07-10","2025-07-18", "2025-08-10"], // チェックしたい日を列挙
-  keywords: ["○", "△", "残"],               // 空きステータス
+  targetDates: ["2025-07-20", "2025-08-10"],
+  keywords: ["○", "△", "残"],
   notifyEnabled: true,
   lineAccessToken: process.env.LINE_ACCESS_TOKEN,
   lineUserId: process.env.LINE_USER_ID
@@ -42,13 +41,34 @@ async function fetchAvailability() {
       const rows = calendarTable.querySelectorAll("tr");
 
       let dateHeaders = [];
+
       rows.forEach((tr, idx) => {
         if (idx === 0) {
+          // 月情報補完（例：左端に "7月"）
+          let baseMonth = "01";
+          const firstCellText = tr.querySelector("th")?.innerText.trim();
+          const match = firstCellText?.match(/(\d{1,2})月/);
+          if (match) {
+            baseMonth = match[1].padStart(2, "0");
+          }
+
           dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
             const ps = th.querySelectorAll("p");
-            const dateText = ps[0]?.innerText.trim(); // 6/14
-            const dayOfWeek = ps[1]?.innerText.trim(); // 曜日
-            return { dateText, dayOfWeek };
+            let rawDate = ps[0]?.innerText.trim() ?? "";
+            let dayOfWeek = ps[1]?.innerText.trim() ?? "";
+
+            let month = baseMonth;
+            let day = "";
+
+            if (rawDate.includes("/")) {
+              const [m, d] = rawDate.split("/");
+              month = m.padStart(2, "0");
+              day = d.padStart(2, "0");
+            } else {
+              day = rawDate.padStart(2, "0");
+            }
+
+            return { date: `2025-${month}-${day}`, dayOfWeek };
           });
         }
       });
@@ -62,11 +82,9 @@ async function fetchAvailability() {
         cells.forEach((cell, i) => {
           const status = cell.innerText.trim();
           const header = dateHeaders[i];
-          if (!header || !header.dateText) return;
+          if (!header) return;
 
-          const [monthStr, dayStr] = header.dateText.split("/");
-          const date = `2025-${monthStr.padStart(2, "0")}-${dayStr.padStart(2, "0")}`;
-          results.push({ date, status });
+          results.push({ date: header.date, status });
         });
       });
 
