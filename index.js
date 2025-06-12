@@ -4,7 +4,7 @@ const fetch = require("node-fetch");
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
 
-// ✅ チェック対象の日付
+// ✅ チェック対象の日付（必要に応じて変更）
 const targetDates = ["2025-07-10", "2025-07-18", "2025-08-10"];
 
 async function checkAvailability() {
@@ -51,22 +51,16 @@ async function checkAvailability() {
         rows.forEach((tr, idx) => {
           if (idx === 0) {
             dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
-              const firstP = th.querySelector("p");
-              if (!firstP) {
-                console.log("⚠️ 日付ヘッダーに <p> が見つかりません");
-                return null;
-              }
-              const text = firstP.innerText.trim(); // 例: "8/1"
-              const [monthStr, dayStr] = text.split("/");
+              const dateText = th.querySelector("p")?.innerText.trim(); // 最初の <p> が "8/1"
+              if (!dateText) return null;
+
+              const [monthStr, dayStr] = dateText.split("/");
               if (!monthStr || !dayStr) {
-                console.log(`⚠️ 日付ヘッダーの分解失敗: "${text}"`);
+                console.log(`⚠️ 日付ヘッダーの分解失敗: "${dateText}"`);
                 return null;
               }
-              return {
-                month: monthStr.padStart(2, "0"),
-                day: dayStr.padStart(2, "0"),
-              };
-            }).filter(Boolean);
+              return { month: monthStr, day: dayStr };
+            });
           }
         });
 
@@ -75,12 +69,13 @@ async function checkAvailability() {
           if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
 
           const cells = row.querySelectorAll("td.cell-date");
+
           cells.forEach((cell, i) => {
             const status = cell.innerText.trim();
             const header = dateHeaders[i];
             if (!header) return;
 
-            const date = `2025-${header.month}-${header.day}`;
+            const date = `2025-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
             const isTarget = targetDates.includes(date);
             const isAvailable = ["○", "△", "残"].some(s => status.includes(s));
 
