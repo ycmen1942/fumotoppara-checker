@@ -2,7 +2,7 @@ const puppeteer = require("puppeteer");
 const fetch = require("node-fetch");
 
 const CONFIG = {
-  targetDates: ["2025-07-20", "2025-08-10"],
+  targetDates: ["2025-07-10", "2025-07-18", "2025-08-10"],
   keywords: ["○", "△", "残"],
   notifyEnabled: true,
   lineAccessToken: process.env.LINE_ACCESS_TOKEN,
