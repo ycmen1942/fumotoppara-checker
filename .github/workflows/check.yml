@@ -2,7 +2,7 @@ name: Fumotoppara Checker
 
 on:
   schedule:
-    - cron: '0 */3 * * *'  # 3時間ごとに実行
+    - cron: '0 */1 * * *'  # １時間ごとに実行
   workflow_dispatch:       # 手動実行も可能
 
 jobs:
