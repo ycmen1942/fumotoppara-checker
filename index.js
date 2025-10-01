@@ -9,7 +9,7 @@ const CACHE_DIR = ".notified_cache";
 const CACHE_FILE = path.join(CACHE_DIR, "notified_cache.json");
 
 // ✅ チェック対象の日付（必要に応じて変更）
-const targetDates = ["2025-11-03"];
+const targetDates = ["2025-11-02"];
 
 async function checkAvailability() {
   const notifiedMap = loadNotifiedMap();
