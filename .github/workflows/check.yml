@@ -2,7 +2,7 @@ name: Fumotoppara Checker
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 */3 * * *'  # 3時間ごとに実行
   workflow_dispatch:       # 手動実行も可能
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Setup Node.js
@@ -21,8 +21,7 @@ jobs:
       - name: Restore notified cache
         uses: actions/cache@v4
         with:
-          path: |
-            .notified_cache
+          path: .notified_cache
           key: notified-cache-${{ github.run_id }}
           restore-keys: |
             notified-cache-
@@ -30,14 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm install puppeteer node-fetch
 
-      - name: Run script
+      - name: Run Fumotoppara checker
         env:
           LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: node index.js
 
-      - name: Save updated cache
+      - name: Ensure cache directory exists
         if: always()
-        run: |
-          mkdir -p .notified_cache
-          cp notified_cache.json .notified_cache/notified_cache.json
+        run: mkdir -p .notified_cache
