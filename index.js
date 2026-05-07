@@ -9,7 +9,8 @@ const CACHE_DIR = ".notified_cache";
 const CACHE_FILE = path.join(CACHE_DIR, "notified_cache.json");
 
 // ✅ チェック対象の日付（必要に応じて変更）
-const targetDates = ["2026-05-07"];
+const targetDates = ["2026-05-10"];
+const TARGET_YEAR = "2026";
 
 async function checkAvailability() {
   const notifiedMap = loadNotifiedMap();
@@ -81,7 +82,7 @@ async function checkAvailability() {
             const header = dateHeaders[i];
             if (!header) return;
 
-            const date = `2025-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
+            const date = `${TARGET_YEAR}-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
             const isTarget = targetDates.includes(date);
             const isAvailable = ["〇", "△", "残"].some(s => status.includes(s));
 
