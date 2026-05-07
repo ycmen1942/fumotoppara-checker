@@ -5,168 +5,290 @@ const path = require("path");
 
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_USER_ID = process.env.LINE_USER_ID;
+
 const CACHE_DIR = ".notified_cache";
 const CACHE_FILE = path.join(CACHE_DIR, "notified_cache.json");
 
-// ✅ チェック対象の日付（必要に応じて変更）
-const targetDates = ["2026-05-10"];
-const TARGET_YEAR = "2026";
+// ==============================
+// チェック対象日
+// ==============================
+const targetDates = [
+  "2026-05-07"
+];
+
+// 年を自動取得
+const targetYear = targetDates[0].split("-")[0];
 
 async function checkAvailability() {
   const notifiedMap = loadNotifiedMap();
 
-  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox"
+    ]
+  });
+
   const page = await browser.newPage();
 
   page.on("console", msg => {
-    for (let i = 0; i < msg.args().length; ++i)
-      msg.args()[i].jsonValue().then(v => console.log(`🧭 [ブラウザログ] ${v}`));
+    for (let i = 0; i < msg.args().length; ++i) {
+      msg.args()[i]
+        .jsonValue()
+        .then(v => console.log(`🧭 [ブラウザログ] ${v}`))
+        .catch(() => {});
+    }
   });
 
   await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
   );
 
-  const url = "https://reserve.fumotoppara.net/reserved/reserved-calendar-list";
-  console.log("アクセス中: カレンダーページ");
+  const url =
+    "https://reserve.fumotoppara.net/reserved/reserved-calendar-list";
+
+  console.log("🌐 アクセス中:", url);
 
   let retries = 3;
   let success = false;
   let data = [];
 
   while (retries-- > 0 && !success) {
-    await page.goto(url, { waitUntil: "networkidle2" });
-
     try {
-      await page.waitForSelector(".calendar-frame table", { timeout: 10000 });
+      await page.goto(url, {
+        waitUntil: "networkidle2",
+        timeout: 60000
+      });
 
-      data = await page.evaluate((targetDates) => {
+      await page.waitForSelector(".calendar-frame table", {
+        timeout: 15000
+      });
+
+      data = await page.evaluate((targetDates, targetYear) => {
         const results = [];
-        const calendarTable = document.querySelector(".calendar-frame table");
+
+        const calendarTable = document.querySelector(
+          ".calendar-frame table"
+        );
+
         if (!calendarTable) {
-          console.log("⚠️ calendar-table が見つかりません");
+          console.log("⚠️ カレンダーテーブル未検出");
           return results;
         }
 
         const rows = calendarTable.querySelectorAll("tr");
+
         if (rows.length <= 1) {
-          console.log("⚠️ 行数が1（ヘッダーのみ）のため無効なデータと判断");
+          console.log("⚠️ テーブル行不足");
           return results;
         }
 
         let dateHeaders = [];
+
         rows.forEach((tr, idx) => {
           if (idx === 0) {
-            dateHeaders = Array.from(tr.querySelectorAll("th.cell-date")).map((th) => {
-              const dateText = th.querySelector("p")?.innerText.trim();
+            dateHeaders = Array.from(
+              tr.querySelectorAll("th.cell-date")
+            ).map(th => {
+              const dateText =
+                th.querySelector("p")?.innerText.trim();
+
               if (!dateText) return null;
 
               const [monthStr, dayStr] = dateText.split("/");
+
               if (!monthStr || !dayStr) {
-                console.log(`⚠️ 日付ヘッダーの分解失敗: "${dateText}"`);
+                console.log(
+                  `⚠️ 日付分解失敗: ${dateText}`
+                );
                 return null;
               }
-              return { month: monthStr, day: dayStr };
+
+              return {
+                month: monthStr,
+                day: dayStr
+              };
             });
           }
         });
 
-        rows.forEach((row) => {
+        rows.forEach(row => {
           const siteCell = row.querySelector("th.cell-site");
-          if (!siteCell || !siteCell.innerText.includes("キャンプ宿泊")) return;
+
+          if (
+            !siteCell ||
+            !siteCell.innerText.includes("キャンプ宿泊")
+          ) {
+            return;
+          }
 
           const cells = row.querySelectorAll("td.cell-date");
 
           cells.forEach((cell, i) => {
             const status = cell.innerText.trim();
+
             const header = dateHeaders[i];
+
             if (!header) return;
 
-            const date = `${TARGET_YEAR}-${header.month.padStart(2, "0")}-${header.day.padStart(2, "0")}`;
+            const date =
+              `${targetYear}-` +
+              `${header.month.padStart(2, "0")}-` +
+              `${header.day.padStart(2, "0")}`;
+
             const isTarget = targetDates.includes(date);
-            const isAvailable = ["〇", "△", "残"].some(s => status.includes(s));
+
+            // 空き判定
+            const isAvailable =
+              /(〇|◯|△|残|空き)/.test(status);
 
             console.log(
-              `→ ${date} | ステータス: "${status}" | isTarget=${isTarget} | isAvailable=${isAvailable}`
+              `📅 ${date} | "${status}" | target=${isTarget} | available=${isAvailable}`
             );
 
             if (isTarget && isAvailable) {
-              results.push({ date, status });
+              results.push({
+                date,
+                status
+              });
             }
           });
         });
 
         return results;
-      }, targetDates);
+      }, targetDates, targetYear);
 
-      if (data.length > 0 || retries === 0) {
-        success = true;
-      } else {
-        console.log("🔄 再試行します...");
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      success = true;
     } catch (e) {
-      console.error("❌ ページ読み込み失敗:", e.message);
+      console.error("❌ 読み込み失敗:", e.message);
+
+      if (retries > 0) {
+        console.log("🔄 リトライします...");
+        await new Promise(resolve =>
+          setTimeout(resolve, 3000)
+        );
+      }
     }
   }
 
   await browser.close();
 
+  console.log("🔍 検出結果:", JSON.stringify(data, null, 2));
+
   const now = new Date();
+
   const available = data
     .filter(({ date }) => {
       const lastNotified = notifiedMap[date];
+
       if (!lastNotified) return true;
-      const elapsed = now - new Date(lastNotified);
-      return elapsed > 1000 * 60 * 60 * 24; // 24時間超
+
+      const elapsed =
+        now - new Date(lastNotified);
+
+      // 24時間後に再通知許可
+      return elapsed > 1000 * 60 * 60 * 24;
     })
     .map(d => d.date);
 
-  console.log("✅ 通知対象:", available.join(", ") || "なし");
+  console.log(
+    "✅ 通知対象:",
+    available.length ? available.join(", ") : "なし"
+  );
 
   if (available.length) {
-    await sendLine("【ふもとっぱら】指定日に空きあり！\n" + available.join("\n"));
+    const message =
+      "【ふもとっぱら】指定日に空きあり！\n\n" +
+      available.join("\n");
+
+    await sendLine(message);
+
     available.forEach(date => {
       notifiedMap[date] = now.toISOString();
     });
+
     saveNotifiedMap(notifiedMap);
+  } else {
+    console.log("📭 空きなし");
   }
 }
 
 async function sendLine(msg) {
-  await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
-    },
-    body: JSON.stringify({
-      to: LINE_USER_ID,
-      messages: [{ type: "text", text: msg }]
-    })
-  });
-  console.log("📨 LINE通知完了");
+  try {
+    const res = await fetch(
+      "https://api.line.me/v2/bot/message/push",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LINE_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify({
+          to: LINE_USER_ID,
+          messages: [
+            {
+              type: "text",
+              text: msg
+            }
+          ]
+        })
+      }
+    );
+
+    const text = await res.text();
+
+    console.log("📨 LINEレスポンス:", text);
+
+    if (!res.ok) {
+      throw new Error(
+        `LINE送信失敗: ${res.status}`
+      );
+    }
+
+    console.log("✅ LINE通知完了");
+  } catch (e) {
+    console.error("❌ LINE通知エラー:", e.message);
+  }
 }
 
 function loadNotifiedMap() {
   try {
     if (fs.existsSync(CACHE_FILE)) {
-      const content = fs.readFileSync(CACHE_FILE, "utf8");
+      const content = fs.readFileSync(
+        CACHE_FILE,
+        "utf8"
+      );
+
       return JSON.parse(content);
     }
   } catch (e) {
-    console.warn("⚠️ 通知キャッシュ読み込み失敗:", e.message);
+    console.warn(
+      "⚠️ キャッシュ読込失敗:",
+      e.message
+    );
   }
+
   return {};
 }
 
 function saveNotifiedMap(map) {
   try {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(map, null, 2));
-    console.log("💾 通知キャッシュ保存完了");
+    fs.mkdirSync(CACHE_DIR, {
+      recursive: true
+    });
+
+    fs.writeFileSync(
+      CACHE_FILE,
+      JSON.stringify(map, null, 2)
+    );
+
+    console.log("💾 キャッシュ保存完了");
   } catch (e) {
-    console.error("❌ 通知キャッシュ保存失敗:", e.message);
+    console.error(
+      "❌ キャッシュ保存失敗:",
+      e.message
+    );
   }
 }
 
