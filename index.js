@@ -57,14 +57,25 @@ async function checkAvailability() {
   while (retries-- > 0 && !success) {
     try {
       await page.goto(url, {
-        waitUntil: "networkidle2",
-        timeout: 60000
-      });
+  waitUntil: "domcontentloaded",
+  timeout: 60000
+});
 
-      await page.waitForSelector(".calendar-frame table", {
-        timeout: 15000
-      });
+// JS描画待ち
+await new Promise(resolve =>
+  setTimeout(resolve, 8000)
+);
 
+// テーブル完成待ち
+await page.waitForFunction(() => {
+  const rows = document.querySelectorAll(
+    ".calendar-frame table tr"
+  );
+
+  return rows.length > 5;
+}, {
+  timeout: 30000
+});
       data = await page.evaluate((targetDates, targetYear) => {
         const results = [];
 
@@ -79,7 +90,7 @@ async function checkAvailability() {
 
         const rows = calendarTable.querySelectorAll("tr");
 
-        if (rows.length <= 1) {
+        if (rows.length <= 5) {
           console.log("⚠️ テーブル行不足");
           return results;
         }
