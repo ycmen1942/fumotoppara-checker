@@ -13,7 +13,7 @@ const CACHE_FILE = path.join(CACHE_DIR, "notified_cache.json");
 // チェック対象日
 // ==============================
 const targetDates = [
-  "2026-05-10"
+  "2026-05-09"
 ];
 
 // 年を自動取得
